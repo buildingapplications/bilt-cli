@@ -1,0 +1,102 @@
+version: "3"
+
+vars:
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "none"
+  BINARY: bilt
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list-all
+
+  # ── Development ──────────────────────────────────────────────────────
+
+  build:
+    desc: Build the binary for the current platform
+    cmds:
+      - go build -ldflags "-s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}" -o {{.BINARY}} .
+    vars:
+      DATE:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test -race ./...
+
+  fmt:
+    desc: Format code
+    cmds:
+      - gofmt -w .
+      - goimports -w .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  check:
+    desc: Run all checks (lint + vet + test)
+    cmds:
+      - task: lint
+      - task: vet
+      - task: test
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f {{.BINARY}}
+      - rm -rf dist/
+
+  # ── Release ──────────────────────────────────────────────────────────
+
+  pre-release:
+    desc: "Prepare a release: run checks, tag, and push tag"
+    requires:
+      vars: [TAG]
+    preconditions:
+      - sh: echo "{{.TAG}}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'
+        msg: "TAG must be semver (e.g. v1.0.0)"
+      - sh: test -z "$(git status --porcelain)"
+        msg: "Working directory is dirty — commit or stash changes first"
+      - sh: test "$(git branch --show-current)" = "main"
+        msg: "Must be on the main branch"
+      - sh: git diff --quiet origin/main..HEAD
+        msg: "Local main is ahead of origin — push first"
+    cmds:
+      - task: check
+      - echo "Tagging {{.TAG}}..."
+      - git tag -a {{.TAG}} -m "Release {{.TAG}}"
+      - git push origin {{.TAG}}
+      - echo ""
+      - echo "Tag {{.TAG}} pushed. Run 'task release TAG={{.TAG}}' to build and publish."
+
+  release:
+    desc: "Build and publish a release with goreleaser"
+    requires:
+      vars: [TAG]
+    preconditions:
+      - sh: git tag -l {{.TAG}} | grep -q {{.TAG}}
+        msg: "Tag {{.TAG}} not found — run 'task pre-release TAG={{.TAG}}' first"
+      - sh: which goreleaser >/dev/null 2>&1
+        msg: "goreleaser not found — install it: brew install goreleaser"
+    cmds:
+      - git checkout {{.TAG}}
+      - goreleaser release --clean
+      - git checkout main
+      - echo ""
+      - echo "Release {{.TAG}} published."
+
+  release:dry:
+    desc: "Test the release build without publishing"
+    cmds:
+      - goreleaser release --snapshot --clean

@@ -20,6 +20,12 @@ var (
 	run     *runner.Runner
 )
 
+// SetVersion sets the version info displayed by --version.
+func SetVersion(version, commit, date string) {
+	rootCmd.Version = version
+	rootCmd.SetVersionTemplate(fmt.Sprintf("bilt %s (commit %s, built %s)\n", version, commit, date))
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "bilt",
 	Short: "Build and install your Bilt app on your iPhone",
