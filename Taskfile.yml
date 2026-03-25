@@ -6,6 +6,7 @@ vars:
   COMMIT:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "none"
   BINARY: bilt
+  PREFIX: '{{.PREFIX | default (printf "%s/bin" (env "GOPATH" | default (printf "%s/go" (env "HOME"))))}}'
 
 tasks:
   default:
@@ -50,6 +51,14 @@ tasks:
       - task: lint
       - task: vet
       - task: test
+
+  install:
+    desc: "Build and install to GOPATH/bin (override: task install PREFIX=/usr/local/bin)"
+    deps: [build]
+    cmds:
+      - mkdir -p {{.PREFIX}}
+      - cp {{.BINARY}} {{.PREFIX}}/{{.BINARY}}
+      - echo "Installed to {{.PREFIX}}/{{.BINARY}}"
 
   clean:
     desc: Remove build artifacts

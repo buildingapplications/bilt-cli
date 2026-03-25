@@ -3,12 +3,37 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bilt-dev/bilt-cli/internal/api"
 	"github.com/bilt-dev/bilt-cli/pkg/ui"
 	"github.com/spf13/cobra"
 )
+
+// firstLine returns the first line of s (handles multiline names from API).
+func firstLine(s string) string {
+	if i := strings.IndexAny(s, "\n\r"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// displayLen returns the length of the first line of s.
+func displayLen(s string) int {
+	return len(firstLine(s))
+}
+
+// truncate shortens s to maxLen, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
 
 var projectsCmd = &cobra.Command{
 	Use:   "projects",
@@ -53,23 +78,22 @@ func runProjectsList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Build table
-	nameW, updatedW, statusW := len("PROJECT"), len("LAST UPDATED"), len("STATUS")
+	// Build table — truncate long names to keep the table readable
+	const maxNameW = 30
+	nameW, updatedW := len("PROJECT"), len("LAST UPDATED")
 	for _, p := range projects {
-		if len(p.Name) > nameW {
-			nameW = len(p.Name)
+		n := displayLen(p.Name)
+		if n > nameW {
+			nameW = n
 		}
 	}
+	if nameW > maxNameW {
+		nameW = maxNameW
+	}
 
-	// Header
-	header := fmt.Sprintf("  %-*s  %-*s  %-*s",
-		nameW, "PROJECT",
-		updatedW, "LAST UPDATED",
-		statusW, "STATUS",
-	)
-	fmt.Println(ui.TableHeader.Render(header))
+	widths := []int{nameW, updatedW}
+	fmt.Println(ui.TableHeaderRow(widths, []string{"PROJECT", "LAST UPDATED", "STATUS"}))
 
-	// Rows
 	for _, p := range projects {
 		updated := p.UpdatedAt
 		if t, err := time.Parse(time.RFC3339, p.UpdatedAt); err == nil {
@@ -79,8 +103,9 @@ func runProjectsList(cmd *cobra.Command, args []string) error {
 		if p.GitURL != "" {
 			status = ui.Success.Render("ready")
 		}
+		name := truncate(firstLine(p.Name), nameW)
 		fmt.Printf("  %-*s  %-*s  %s\n",
-			nameW, p.Name,
+			nameW, name,
 			updatedW, updated,
 			status,
 		)

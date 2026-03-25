@@ -58,14 +58,8 @@ func runDevices(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	header := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %s",
-		nameW, "DEVICE",
-		modelW, "MODEL",
-		iosW, "iOS",
-		connW, "CONNECTION",
-		"UDID",
-	)
-	fmt.Println(ui.TableHeader.Render(header))
+	widths := []int{nameW, modelW, iosW, connW}
+	fmt.Println(ui.TableHeaderRow(widths, []string{"DEVICE", "MODEL", "iOS", "CONNECTION", "UDID"}))
 
 	for _, d := range devices {
 		ios := d.IOSVersion

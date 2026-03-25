@@ -40,16 +40,34 @@ var (
 
 // Table styles
 var (
-	TableHeader = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorPrimary).
-			BorderBottom(true).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(ColorMuted)
-
-	TableCell = lipgloss.NewStyle().
-			PaddingRight(2)
+	tableHeaderWord = lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary)
 )
+
+// TableHeaderRow formats a styled header with an underline.
+// Widths correspond to each column; the last column is not padded.
+func TableHeaderRow(widths []int, cols []string) string {
+	var header strings.Builder
+	header.WriteString("  ")
+	totalW := 0
+	for i, col := range cols {
+		styled := tableHeaderWord.Render(col)
+		if i < len(widths) && i < len(cols)-1 {
+			pad := widths[i] - len(col)
+			if pad < 0 {
+				pad = 0
+			}
+			header.WriteString(styled)
+			header.WriteString(strings.Repeat(" ", pad+2))
+			totalW += widths[i] + 2
+		} else {
+			header.WriteString(styled)
+			totalW += len(col)
+		}
+	}
+	header.WriteString("\n  ")
+	header.WriteString(Muted.Render(strings.Repeat("-", totalW)))
+	return header.String()
+}
 
 // Box styles
 var (
