@@ -19,11 +19,18 @@ var doctorCmd = &cobra.Command{
 		results := prereq.CheckAll(cmd.Context(), run)
 
 		passed := 0
+		warnings := 0
 		failed := 0
 		for _, r := range results {
 			if r.OK {
 				fmt.Printf("  %s %s\n", ui.CheckMark, r.Detail)
 				passed++
+			} else if !r.Critical {
+				fmt.Printf("  %s %s\n", ui.WarnMark, r.Detail)
+				if r.FixHint != "" {
+					fmt.Println(ui.Hint(r.FixHint))
+				}
+				warnings++
 			} else {
 				fmt.Printf("  %s %s\n", ui.CrossMark, r.Detail)
 				if r.FixHint != "" {
@@ -47,9 +54,14 @@ var doctorCmd = &cobra.Command{
 			return fmt.Errorf("some critical prerequisites are missing")
 		}
 
+		summary := fmt.Sprintf("All %d checks passed", passed)
+		if warnings > 0 {
+			summary += fmt.Sprintf(", %d warning(s)", warnings)
+		}
+		summary += " — ready to build!"
 		fmt.Printf("  %s %s\n\n",
 			ui.CheckMark,
-			ui.Success.Render(fmt.Sprintf("All %d checks passed — ready to build!", passed)))
+			ui.Success.Render(summary))
 		return nil
 	},
 }
