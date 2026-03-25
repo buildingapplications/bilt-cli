@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "lint": "golangci-lint run ./...",
+    "test": "go test ./..."
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

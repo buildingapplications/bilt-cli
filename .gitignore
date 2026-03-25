@@ -1,0 +1,33 @@
+# Binaries
+bilt-cli
+*.exe
+*.dll
+*.so
+*.dylib
+/dist/
+
+# Test
+*.test
+*.out
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Node (husky)
+node_modules/
+package-lock.json
+
+# Build artifacts
+*.log

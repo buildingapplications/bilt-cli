@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+
+echo "Running golangci-lint..."
+golangci-lint run ./...
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "Lint failed. Fix the issues above before committing."
+  exit 1
+fi
+
+echo "Running go vet..."
+go vet ./...
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "go vet failed. Fix the issues above before committing."
+  exit 1
+fi
+
+echo "Running tests..."
+go test ./...
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "Tests failed. Fix the issues above before committing."
+  exit 1
+fi
+
+echo "All checks passed."
