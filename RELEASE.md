@@ -1,45 +1,29 @@
 # Release Process
 
-Releases use [goreleaser](https://goreleaser.com) and are driven by git tags.
+Versions are auto-bumped from conventional commit messages since the last tag.
 
-## Steps
+| Commit prefix | Bump |
+|---|---|
+| `feat:` / `feat(scope):` | minor |
+| `fix:` / anything else | patch |
+| `feat!:` / `BREAKING CHANGE` | major |
 
-### 1. Pre-release
-
-Run all checks, create and push a signed tag:
+## Quick release
 
 ```sh
-task pre-release TAG=v0.1.0
+task release
 ```
 
-This will:
-- Run lint, vet, and tests
-- Verify you're on a clean `main` branch, up to date with origin
-- Create an annotated tag and push it
+This will: run all checks, compute the next version, tag, push, and publish via goreleaser.
 
-### 2. Release
-
-Build cross-platform binaries and publish the GitHub release:
+## Other commands
 
 ```sh
-task release TAG=v0.1.0
-```
-
-This runs `goreleaser release`, which:
-- Builds for darwin/linux/windows (amd64 + arm64)
-- Creates a GitHub release with changelog
-- Updates the Homebrew tap (`bilt-dev/homebrew-tap`)
-
-### Dry run
-
-Test the release build locally without publishing:
-
-```sh
-task release:dry
+task version       # preview what the next version would be
+task release:dry   # test goreleaser build locally, no publish
+task release:tag   # tag and push only (no goreleaser)
 ```
 
 ## Versioning
 
-We use [semver](https://semver.org). Bump accordingly:
-- `v0.x.y` — pre-1.0, minor = breaking, patch = fixes/features
-- `v1.0.0+` — major = breaking, minor = features, patch = fixes
+We use [semver](https://semver.org). Pre-1.0: minor = breaking, patch = fixes/features.

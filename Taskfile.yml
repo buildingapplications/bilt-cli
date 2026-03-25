@@ -59,44 +59,61 @@ tasks:
 
   # ── Release ──────────────────────────────────────────────────────────
 
-  pre-release:
-    desc: "Prepare a release: run checks, tag, and push tag"
-    requires:
-      vars: [TAG]
+  version:
+    desc: Show what the next version would be and why
+    cmds:
+      - ./scripts/next-version.sh --dry
+
+  release:
+    desc: "Auto-bump version, tag, run checks, and publish with goreleaser"
     preconditions:
-      - sh: echo "{{.TAG}}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'
-        msg: "TAG must be semver (e.g. v1.0.0)"
       - sh: test -z "$(git status --porcelain)"
         msg: "Working directory is dirty — commit or stash changes first"
       - sh: test "$(git branch --show-current)" = "main"
         msg: "Must be on the main branch"
-      - sh: git diff --quiet origin/main..HEAD
-        msg: "Local main is ahead of origin — push first"
+      - sh: git fetch origin main --quiet && git diff --quiet origin/main..HEAD
+        msg: "Local main is out of sync with origin — pull/push first"
+      - sh: which goreleaser >/dev/null 2>&1
+        msg: "goreleaser not found — install it: brew install goreleaser"
+    vars:
+      TAG:
+        sh: ./scripts/next-version.sh
     cmds:
       - task: check
+      - echo ""
+      - ./scripts/next-version.sh --dry
+      - echo ""
       - echo "Tagging {{.TAG}}..."
       - git tag -a {{.TAG}} -m "Release {{.TAG}}"
       - git push origin {{.TAG}}
-      - echo ""
-      - echo "Tag {{.TAG}} pushed. Run 'task release TAG={{.TAG}}' to build and publish."
-
-  release:
-    desc: "Build and publish a release with goreleaser"
-    requires:
-      vars: [TAG]
-    preconditions:
-      - sh: git tag -l {{.TAG}} | grep -q {{.TAG}}
-        msg: "Tag {{.TAG}} not found — run 'task pre-release TAG={{.TAG}}' first"
-      - sh: which goreleaser >/dev/null 2>&1
-        msg: "goreleaser not found — install it: brew install goreleaser"
-    cmds:
-      - git checkout {{.TAG}}
       - goreleaser release --clean
-      - git checkout main
       - echo ""
-      - echo "Release {{.TAG}} published."
+      - echo "Released {{.TAG}}."
 
   release:dry:
     desc: "Test the release build without publishing"
     cmds:
       - goreleaser release --snapshot --clean
+
+  release:tag:
+    desc: "Only auto-bump and push the tag (no goreleaser)"
+    preconditions:
+      - sh: test -z "$(git status --porcelain)"
+        msg: "Working directory is dirty — commit or stash changes first"
+      - sh: test "$(git branch --show-current)" = "main"
+        msg: "Must be on the main branch"
+      - sh: git fetch origin main --quiet && git diff --quiet origin/main..HEAD
+        msg: "Local main is out of sync with origin — pull/push first"
+    vars:
+      TAG:
+        sh: ./scripts/next-version.sh
+    cmds:
+      - task: check
+      - echo ""
+      - ./scripts/next-version.sh --dry
+      - echo ""
+      - echo "Tagging {{.TAG}}..."
+      - git tag -a {{.TAG}} -m "Release {{.TAG}}"
+      - git push origin {{.TAG}}
+      - echo ""
+      - echo "Tag {{.TAG}} pushed. Run 'task release' or use goreleaser manually."
