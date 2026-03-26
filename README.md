@@ -1,6 +1,6 @@
-# bilt CLI
+# Bilt.me CLI
 
-Build your AI-generated React Native app and install it on your iPhone.
+Build your Bilt app and install it on your iPhone.
 
 ## Install
 

@@ -28,6 +28,7 @@ var (
 	flagProject     string
 	flagDevice      string
 	flagSkipInstall bool
+	flagToken       string
 )
 
 var buildCmd = &cobra.Command{
@@ -38,23 +39,38 @@ var buildCmd = &cobra.Command{
 }
 
 func init() {
-	buildCmd.Flags().StringVar(&flagProject, "project", "", "Project ID or name")
+	buildCmd.Flags().StringVar(&flagProject, "project", "", "Project ID (required)")
 	buildCmd.Flags().StringVar(&flagDevice, "device", "", "Device UDID to install on")
 	buildCmd.Flags().BoolVar(&flagSkipInstall, "skip-install", false, "Build only, don't install on device")
+	buildCmd.Flags().StringVar(&flagToken, "token", "", "One-time token from bilt.me (required)")
+	_ = buildCmd.MarkFlagRequired("project")
+	_ = buildCmd.MarkFlagRequired("token")
 	rootCmd.AddCommand(buildCmd)
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
-	if cfg.Auth.APIKey == "" {
-		fmt.Println(ui.FormatError("Not logged in",
-			"Run `bilt auth login` to authenticate first"))
-		return fmt.Errorf("not logged in")
-	}
-
 	if !platform.IsMacOS() {
 		fmt.Println(ui.FormatError("macOS required",
 			"bilt build requires macOS with Xcode installed"))
 		return fmt.Errorf("bilt build requires macOS with Xcode installed")
+	}
+
+	// Exchange the one-time token for an API key
+	fmt.Println()
+	fmt.Printf("  %s Authenticating...\n", ui.Arrow)
+	unauthClient := api.NewClient("")
+	resp, err := unauthClient.ExchangeToken(flagToken)
+	if err != nil {
+		fmt.Println(ui.FormatError("Authentication failed", err.Error()))
+		return fmt.Errorf("token exchange failed: %w", err)
+	}
+	if err := cfg.SetAPIKey(resp.APIKey); err != nil {
+		return fmt.Errorf("saving credentials: %w", err)
+	}
+	if resp.Email != "" {
+		fmt.Printf("  %s Logged in as %s\n", ui.CheckMark, ui.Bold.Render(resp.Email))
+	} else {
+		fmt.Printf("  %s Authenticated\n", ui.CheckMark)
 	}
 
 	client := api.NewClient(cfg.Auth.APIKey)
@@ -67,20 +83,15 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 
 	fmt.Println()
 
-	// ── Step 1: Select project ──────────────────────────────────────────
-	printStep(1, totalSteps, "Selecting project", "active")
-	project, err := selectProject(client)
+	// ── Step 1: Fetch project ──────────────────────────────────────────
+	printStep(1, totalSteps, "Fetching project", "active")
+	detail, err := client.GetProject(flagProject)
 	if err != nil {
-		return err
+		printStep(1, totalSteps, "Project not found", "fail")
+		return fmt.Errorf("fetching project: %w", err)
 	}
-	printStep(1, totalSteps, fmt.Sprintf("Project: %s", ui.Highlight.Render(project.Name)), "done")
+	printStep(1, totalSteps, fmt.Sprintf("Project: %s", ui.Highlight.Render(detail.Name)), "done")
 	fmt.Println()
-
-	// Fetch full project detail (includes authenticated clone URL)
-	detail, err := client.GetProject(project.ID)
-	if err != nil {
-		return fmt.Errorf("fetching project details: %w", err)
-	}
 
 	cloneURL := detail.CloneURL
 	if cloneURL == "" {
@@ -89,11 +100,10 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 	if cloneURL == "" {
 		fmt.Println(ui.FormatError("No git URL found",
 			"Make sure your project has generated code at https://bilt.me"))
-		return fmt.Errorf("project %q has no git URL", project.Name)
+		return fmt.Errorf("project %q has no git URL", detail.Name)
 	}
 
-	// Use project ID as the local directory key (no slug in the API)
-	projectKey := sanitizeDirName(project.Name)
+	projectKey := sanitizeDirName(detail.Name)
 	buildDir := filepath.Join(config.BiltDir(), "builds", projectKey)
 	logDir := filepath.Join(config.BiltDir(), "logs")
 	_ = os.MkdirAll(buildDir, 0755)
@@ -134,7 +144,7 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 	// Detect if this is an Expo project that needs prebuild
 	needsPrebuild := deps.IsExpoProject(projectDir) && deps.NeedsExpoPrebuild(projectDir)
 	if needsPrebuild {
-		totalSteps = 10 // extra step for expo prebuild
+		totalSteps = 10
 	}
 
 	// Create build log file
@@ -205,7 +215,6 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 		return fmt.Errorf("no schemes found in workspace")
 	}
 
-	// Use cached scheme, or pick the app scheme (not a library)
 	scheme := cfg.GetProject(projectKey).Scheme
 	if scheme == "" || !containsString(schemes, scheme) {
 		scheme = xcode.PickAppScheme(schemes, workspace)
@@ -299,7 +308,6 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 	}
 	printStep(step, totalSteps, fmt.Sprintf("Built in %s", formatDuration(buildDuration)), "done")
 
-	// Find the .app inside the archive
 	appPath, err := xcode.FindAppInArchive(archivePath)
 	if err != nil {
 		return fmt.Errorf("finding app in archive: %w", err)
@@ -309,7 +317,7 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 
 	// ── Install on device ───────────────────────────────────────────────
 	if flagSkipInstall {
-		printSummary(project.Name, detail.BundleID, appPath, buildDuration)
+		printSummary(detail.Name, detail.BundleID, appPath, buildDuration)
 		return nil
 	}
 
@@ -321,14 +329,13 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 		if devErr != nil || len(devices) == 0 {
 			printStep(step, totalSteps, "No device connected — skipping install", "warn")
 			fmt.Println()
-			printSummary(project.Name, detail.BundleID, appPath, buildDuration)
+			printSummary(detail.Name, detail.BundleID, appPath, buildDuration)
 			return nil
 		}
 		if len(devices) == 1 {
 			targetUDID = devices[0].UDID
 			fmt.Printf("      Installing on %s...\n", ui.Bold.Render(devices[0].Name))
 		} else {
-			// Interactive device selection
 			items := make([]ui.SelectItem, len(devices))
 			for i, d := range devices {
 				items[i] = ui.SelectItem{
@@ -359,7 +366,7 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 	}
 	fmt.Println()
 
-	printSummary(project.Name, detail.BundleID, appPath, buildDuration)
+	printSummary(detail.Name, detail.BundleID, appPath, buildDuration)
 
 	// Cache project config
 	_ = cfg.SetProject(projectKey, config.ProjectConfig{
@@ -369,65 +376,9 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 		Workspace: workspace,
 	})
 
-	// Prune old logs
 	pruneOldLogs(20)
 
 	return nil
-}
-
-func selectProject(client *api.Client) (*api.Project, error) {
-	if flagProject != "" {
-		// Try as ID first
-		detail, err := client.GetProject(flagProject)
-		if err == nil {
-			return &api.Project{
-				ID:         detail.ID,
-				Name:       detail.Name,
-				Visibility: detail.Visibility,
-				UpdatedAt:  detail.UpdatedAt,
-			}, nil
-		}
-
-		// Search by name in list
-		projects, listErr := client.ListProjects()
-		if listErr != nil {
-			return nil, fmt.Errorf("fetching projects: %w", listErr)
-		}
-		for i, p := range projects {
-			if strings.EqualFold(p.Name, flagProject) || p.ID == flagProject {
-				return &projects[i], nil
-			}
-		}
-		return nil, fmt.Errorf("project %q not found", flagProject)
-	}
-
-	// Interactive: fetch and list
-	projects, err := client.ListProjects()
-	if err != nil {
-		return nil, fmt.Errorf("fetching projects: %w", err)
-	}
-	if len(projects) == 0 {
-		fmt.Println(ui.FormatError("No projects found",
-			"Create your first app at https://bilt.me"))
-		return nil, fmt.Errorf("no projects found")
-	}
-	if len(projects) == 1 {
-		return &projects[0], nil
-	}
-
-	// Interactive selection with arrow keys
-	items := make([]ui.SelectItem, len(projects))
-	for i, p := range projects {
-		items[i] = ui.SelectItem{Label: p.Name}
-	}
-	choice, err := ui.Select("Select a project:", items)
-	if err != nil {
-		return nil, fmt.Errorf("selection failed: %w", err)
-	}
-	if choice < 0 {
-		return nil, fmt.Errorf("cancelled")
-	}
-	return &projects[choice], nil
 }
 
 func printStep(current, total int, label, status string) {
@@ -460,7 +411,6 @@ func buildError(what, logPath string, err error) error {
 func xcodeBuildError(logPath string, err error) error {
 	hints := []string{}
 
-	// Scan log for known errors and show hints
 	data, readErr := os.ReadFile(logPath)
 	if readErr == nil {
 		logContent := strings.ToLower(string(data))
@@ -469,8 +419,7 @@ func xcodeBuildError(logPath string, err error) error {
 		case strings.Contains(logContent, "no account for team"):
 			hints = append(hints,
 				"The selected team ID isn't signed into Xcode.",
-				"Open Xcode → Settings → Accounts and sign in with the matching Apple ID.",
-				"Or run `bilt build` again and pick a different signing identity.")
+				"Open Xcode → Settings → Accounts and sign in with the matching Apple ID.")
 		case strings.Contains(logContent, "no signing certificate"):
 			hints = append(hints,
 				"Sign into your Apple ID in Xcode: Settings → Accounts")
@@ -507,11 +456,9 @@ func containsString(ss []string, s string) bool {
 	return false
 }
 
-// sanitizeDirName converts a project name to a safe directory name.
 func sanitizeDirName(name string) string {
 	name = strings.ToLower(name)
 	name = strings.ReplaceAll(name, " ", "-")
-	// Remove anything that isn't alphanumeric or dash
 	var b strings.Builder
 	for _, r := range name {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
@@ -525,7 +472,6 @@ func sanitizeDirName(name string) string {
 	return result
 }
 
-// spinnerModel is a bubbletea model that shows a spinner with a message.
 type spinnerModel struct {
 	spinner spinner.Model
 	message string
@@ -562,7 +508,6 @@ func (m spinnerModel) View() string {
 	return fmt.Sprintf("      %s %s", m.spinner.View(), ui.Muted.Render(m.message))
 }
 
-// withSpinner runs a function while showing a spinner. Returns the function's result.
 func withSpinner[T any](message string, fn func() (T, error)) (T, error) {
 	var result T
 	var fnErr error
@@ -582,7 +527,6 @@ func withSpinner[T any](message string, fn func() (T, error)) (T, error) {
 	}()
 
 	if _, err := p.Run(); err != nil {
-		// If TUI fails, just wait for the function
 		<-done
 	}
 

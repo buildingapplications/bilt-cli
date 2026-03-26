@@ -29,24 +29,6 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
-// User represents the current authenticated user from GET /api/cli/me.
-type User struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Plan  string `json:"plan"`
-}
-
-// Project represents a Bilt project from GET /api/cli/projects.
-type Project struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	GitURL      string `json:"git_url"`
-	Visibility  string `json:"visibility"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
-}
-
 // ProjectDetail represents full project details from GET /api/cli/projects/:id.
 type ProjectDetail struct {
 	ID          string `json:"id"`
@@ -60,75 +42,17 @@ type ProjectDetail struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
-// AuthStartResponse is returned by POST /api/cli/auth/start.
-type AuthStartResponse struct {
-	Code      string `json:"code"`
-	ExpiresIn int    `json:"expires_in"`
-}
-
-// AuthPollResponse is returned by GET /api/cli/auth/poll.
-type AuthPollResponse struct {
-	Status string `json:"status"` // "pending" or "complete"
-	APIKey string `json:"api_key,omitempty"`
+// AuthExchangeResponse is returned by POST /api/cli/auth/exchange.
+type AuthExchangeResponse struct {
+	APIKey string `json:"api_key"`
 	Name   string `json:"name,omitempty"`
 	Email  string `json:"email,omitempty"`
-}
-
-// projectsResponse wraps the list response.
-type projectsResponse struct {
-	Projects []Project `json:"projects"`
 }
 
 // APIError represents a structured error from the API.
 type APIError struct {
 	Error      string `json:"error"`
 	RetryAfter int    `json:"retry_after,omitempty"`
-}
-
-// StartAuth begins the device auth flow. No API key required.
-func (c *Client) StartAuth() (*AuthStartResponse, error) {
-	req, err := http.NewRequest("POST", c.BaseURL+"/api/cli/auth/start", nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	var resp AuthStartResponse
-	if err := c.doJSONNoAuth(req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// PollAuth checks the status of a device auth flow. No API key required.
-func (c *Client) PollAuth(code string) (*AuthPollResponse, error) {
-	req, err := http.NewRequest("GET", c.BaseURL+"/api/cli/auth/poll?code="+code, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	var resp AuthPollResponse
-	if err := c.doJSONNoAuth(req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// Me returns the current authenticated user.
-func (c *Client) Me() (*User, error) {
-	var user User
-	if err := c.get("/api/cli/me", &user); err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
-// ListProjects returns all projects for the authenticated user.
-func (c *Client) ListProjects() ([]Project, error) {
-	var resp projectsResponse
-	if err := c.get("/api/cli/projects", &resp); err != nil {
-		return nil, err
-	}
-	return resp.Projects, nil
 }
 
 // GetProject returns full details for a specific project, including clone URL.
@@ -140,38 +64,28 @@ func (c *Client) GetProject(id string) (*ProjectDetail, error) {
 	return &project, nil
 }
 
+// ExchangeToken exchanges a one-time token for an API key. No API key required.
+func (c *Client) ExchangeToken(token string) (*AuthExchangeResponse, error) {
+	body := strings.NewReader(fmt.Sprintf(`{"token":"%s"}`, token))
+	req, err := http.NewRequest("POST", c.BaseURL+"/api/cli/auth/exchange", body)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	var resp AuthExchangeResponse
+	if err := c.doJSON(req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) get(path string, result interface{}) error {
 	req, err := http.NewRequest("GET", c.BaseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 	c.setAuth(req)
-	return c.doJSON(req, result)
-}
-
-func (c *Client) post(path string, body any, result any) error { //nolint:unused // kept for future use
-	var reqBody io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("marshaling request: %w", err)
-		}
-		reqBody = strings.NewReader(string(data))
-	}
-
-	req, err := http.NewRequest("POST", c.BaseURL+path, reqBody)
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	c.setAuth(req)
-	return c.doJSON(req, result)
-}
-
-// doJSONNoAuth executes a request without auth headers (for public endpoints).
-func (c *Client) doJSONNoAuth(req *http.Request, result interface{}) error {
 	return c.doJSON(req, result)
 }
 
@@ -188,7 +102,7 @@ func (c *Client) doJSON(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("invalid or expired API key — run `bilt auth login` to update")
+		return fmt.Errorf("invalid or expired API key")
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {

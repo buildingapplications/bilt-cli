@@ -14,7 +14,6 @@ import (
 
 var (
 	verbose bool
-	jsonOut bool
 	logger  *zap.Logger
 	cfg     *config.Config
 	run     *runner.Runner
@@ -66,7 +65,6 @@ func Execute() error {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose output")
-	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 }
 
 func initLogger() (*zap.Logger, error) {
