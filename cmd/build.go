@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +12,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/bilt-dev/bilt-cli/internal/api"
 	"github.com/bilt-dev/bilt-cli/internal/config"
 	"github.com/bilt-dev/bilt-cli/internal/deps"
 	"github.com/bilt-dev/bilt-cli/internal/device"
@@ -25,27 +27,72 @@ import (
 )
 
 var (
-	flagProject     string
 	flagDevice      string
 	flagSkipInstall bool
-	flagToken       string
 )
 
+var baseURL = "http://localhost:3000"
+
+// SetBaseURL overrides the API base URL (called from main via ldflags).
+func SetBaseURL(url string) {
+	baseURL = url
+}
+
+// buildPayload holds the build info fetched from the server.
+type buildPayload struct {
+	APIKey      string `json:"api_key"`
+	ProjectID   string `json:"project_id"`
+	ProjectName string `json:"project_name"`
+	CloneURL    string `json:"clone_url"`
+	GitURL      string `json:"git_url"`
+	BundleID    string `json:"bundle_id"`
+	Email       string `json:"email"`
+}
+
 var buildCmd = &cobra.Command{
-	Use:   "build",
+	Use:   "build <code>",
 	Short: "Build your app and install it on your iPhone",
-	Long:  "Build your Bilt project as an iOS app and optionally install it on a connected device.",
+	Long:  "Build your Bilt project as an iOS app and optionally install it on a connected device.\nGet a build code from https://bilt.me",
+	Args:  cobra.ExactArgs(1),
 	RunE:  runBuild,
 }
 
 func init() {
-	buildCmd.Flags().StringVar(&flagProject, "project", "", "Project ID (required)")
 	buildCmd.Flags().StringVar(&flagDevice, "device", "", "Device UDID to install on")
 	buildCmd.Flags().BoolVar(&flagSkipInstall, "skip-install", false, "Build only, don't install on device")
-	buildCmd.Flags().StringVar(&flagToken, "token", "", "One-time token from bilt.me (required)")
-	_ = buildCmd.MarkFlagRequired("project")
-	_ = buildCmd.MarkFlagRequired("token")
 	rootCmd.AddCommand(buildCmd)
+}
+
+// exchangeCode fetches the build payload from the server using a short build code.
+func exchangeCode(code string) (*buildPayload, error) {
+	resp, err := http.Get(baseURL + "/api/cli/auth/exchange?code=" + code)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to server: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("build code expired or invalid")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server error (HTTP %d)", resp.StatusCode)
+	}
+
+	var p buildPayload
+	if err := json.Unmarshal(body, &p); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	if p.ProjectID == "" || p.APIKey == "" {
+		return nil, fmt.Errorf("server returned incomplete build info")
+	}
+
+	return &p, nil
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -55,55 +102,48 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("bilt build requires macOS with Xcode installed")
 	}
 
-	// Exchange the one-time token for an API key
+	// Exchange the short code for build info
 	fmt.Println()
-	fmt.Printf("  %s Authenticating...\n", ui.Arrow)
-	unauthClient := api.NewClient("")
-	resp, err := unauthClient.ExchangeToken(flagToken)
+	fmt.Printf("  %s Fetching build info...\n", ui.Arrow)
+	payload, err := exchangeCode(args[0])
 	if err != nil {
-		fmt.Println(ui.FormatError("Authentication failed", err.Error()))
-		return fmt.Errorf("token exchange failed: %w", err)
+		fmt.Println(ui.FormatError("Invalid build code", err.Error()))
+		return fmt.Errorf("invalid build code: %w", err)
 	}
-	if err := cfg.SetAPIKey(resp.APIKey); err != nil {
+
+	if payload.Email != "" {
+		fmt.Printf("  %s Building as %s\n", ui.CheckMark, ui.Bold.Render(payload.Email))
+	}
+
+	// Save API key for authenticated git clone
+	if err := cfg.SetAPIKey(payload.APIKey); err != nil {
 		return fmt.Errorf("saving credentials: %w", err)
 	}
-	if resp.Email != "" {
-		fmt.Printf("  %s Logged in as %s\n", ui.CheckMark, ui.Bold.Render(resp.Email))
-	} else {
-		fmt.Printf("  %s Authenticated\n", ui.CheckMark)
-	}
 
-	client := api.NewClient(cfg.Auth.APIKey)
-	return runLocalBuild(cmd, client)
+	return runLocalBuild(cmd, payload)
 }
 
-func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
+func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	ctx := cmd.Context()
 	totalSteps := 9
 
 	fmt.Println()
 
-	// ── Step 1: Fetch project ──────────────────────────────────────────
-	printStep(1, totalSteps, "Fetching project", "active")
-	detail, err := client.GetProject(flagProject)
-	if err != nil {
-		printStep(1, totalSteps, "Project not found", "fail")
-		return fmt.Errorf("fetching project: %w", err)
-	}
-	printStep(1, totalSteps, fmt.Sprintf("Project: %s", ui.Highlight.Render(detail.Name)), "done")
+	// ── Step 1: Project info ───────────────────────────────────────────
+	printStep(1, totalSteps, fmt.Sprintf("Project: %s", ui.Highlight.Render(token.ProjectName)), "done")
 	fmt.Println()
 
-	cloneURL := detail.CloneURL
+	cloneURL := token.CloneURL
 	if cloneURL == "" {
-		cloneURL = detail.GitURL
+		cloneURL = token.GitURL
 	}
 	if cloneURL == "" {
 		fmt.Println(ui.FormatError("No git URL found",
 			"Make sure your project has generated code at https://bilt.me"))
-		return fmt.Errorf("project %q has no git URL", detail.Name)
+		return fmt.Errorf("project %q has no git URL", token.ProjectName)
 	}
 
-	projectKey := sanitizeDirName(detail.Name)
+	projectKey := sanitizeDirName(token.ProjectName)
 	buildDir := filepath.Join(config.BiltDir(), "builds", projectKey)
 	logDir := filepath.Join(config.BiltDir(), "logs")
 	_ = os.MkdirAll(buildDir, 0755)
@@ -249,7 +289,6 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 					ui.Muted.Render("("+teamID+")")),
 				"done")
 		} else {
-			// Interactive team selection
 			items := make([]ui.SelectItem, len(xcodeTeams))
 			for i, t := range xcodeTeams {
 				items[i] = ui.SelectItem{
@@ -317,7 +356,7 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 
 	// ── Install on device ───────────────────────────────────────────────
 	if flagSkipInstall {
-		printSummary(detail.Name, detail.BundleID, appPath, buildDuration)
+		printSummary(token.ProjectName, token.BundleID, appPath, buildDuration)
 		return nil
 	}
 
@@ -329,7 +368,7 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 		if devErr != nil || len(devices) == 0 {
 			printStep(step, totalSteps, "No device connected — skipping install", "warn")
 			fmt.Println()
-			printSummary(detail.Name, detail.BundleID, appPath, buildDuration)
+			printSummary(token.ProjectName, token.BundleID, appPath, buildDuration)
 			return nil
 		}
 		if len(devices) == 1 {
@@ -366,7 +405,7 @@ func runLocalBuild(cmd *cobra.Command, client *api.Client) error {
 	}
 	fmt.Println()
 
-	printSummary(detail.Name, detail.BundleID, appPath, buildDuration)
+	printSummary(token.ProjectName, token.BundleID, appPath, buildDuration)
 
 	// Cache project config
 	_ = cfg.SetProject(projectKey, config.ProjectConfig{

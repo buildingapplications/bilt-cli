@@ -4,7 +4,7 @@ set -e
 # Bilt CLI installer
 # Usage:
 #   curl -fsSL https://bilt.me/install.sh | sh
-#   curl -fsSL https://bilt.me/install.sh | sh -s -- build --project <id> --token <token>
+#   curl -fsSL https://bilt.me/install.sh | sh -s -- build <code>
 
 GITHUB_REPO="buildingapplications/bilt-cli"
 BINARY_NAME="bilt"
@@ -37,6 +37,21 @@ detect_arch() {
   esac
 }
 
+# Find bilt in PATH or common install locations
+find_bilt() {
+  if command -v bilt >/dev/null 2>&1; then
+    command -v bilt
+    return 0
+  fi
+  for dir in "$HOME/go/bin" "/usr/local/bin" "/opt/homebrew/bin" "$HOME/.local/bin"; do
+    if [ -x "$dir/bilt" ]; then
+      echo "$dir/bilt"
+      return 0
+    fi
+  done
+  return 1
+}
+
 get_latest_version() {
   curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
     | grep '"tag_name"' \
@@ -64,15 +79,12 @@ install_via_download() {
   version=$(get_latest_version)
   if [ -z "$version" ]; then
     error "Could not determine latest version"
+    error "Install manually: go install github.com/bilt-dev/bilt-cli@latest"
     exit 1
   fi
   info "Latest version: v${version}"
 
   local archive_name="${BINARY_NAME}_${os}_${arch}.tar.gz"
-  if [ "$os" = "windows" ]; then
-    archive_name="${BINARY_NAME}_${os}_${arch}.zip"
-  fi
-
   local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${version}/${archive_name}"
 
   info "Downloading ${archive_name}..."
@@ -85,7 +97,6 @@ install_via_download() {
   info "Extracting..."
   tar -xzf "${tmp_dir}/${archive_name}" -C "$tmp_dir"
 
-  # Install binary
   if [ -w "$INSTALL_DIR" ]; then
     mv "${tmp_dir}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
   else
@@ -98,14 +109,15 @@ install_via_download() {
 }
 
 main() {
-  local os arch
+  local os arch bilt_path
 
   os=$(detect_os)
   arch=$(detect_arch)
 
-  # Check if bilt is already installed
-  if command -v bilt >/dev/null 2>&1; then
-    info "bilt is already installed: $(bilt --version 2>/dev/null || echo 'unknown version')"
+  bilt_path=$(find_bilt) || bilt_path=""
+
+  if [ -n "$bilt_path" ]; then
+    info "bilt found: $bilt_path"
   else
     # Try brew first on macOS, fall back to direct download
     if [ "$os" = "darwin" ]; then
@@ -113,25 +125,23 @@ main() {
     else
       install_via_download "$os" "$arch"
     fi
+    bilt_path=$(find_bilt) || bilt_path=""
   fi
 
-  # Verify installation
-  if ! command -v bilt >/dev/null 2>&1; then
-    error "Installation failed — 'bilt' not found in PATH"
+  if [ -z "$bilt_path" ]; then
+    error "Installation failed — 'bilt' not found"
     error "You may need to add ${INSTALL_DIR} to your PATH"
     exit 1
   fi
 
-  printf "\n"
-  info "bilt is ready!"
-
-  # If arguments were passed (e.g., build --project <id> --token <token>), run them
+  # Run bilt with any arguments passed to the script
   if [ $# -gt 0 ]; then
     printf "\n"
-    info "Running: bilt $*"
-    printf "\n"
-    exec bilt "$@"
+    exec "$bilt_path" "$@"
   fi
+
+  printf "\n"
+  info "bilt is ready! Run 'bilt build <code>' to build your app."
 }
 
 main "$@"
