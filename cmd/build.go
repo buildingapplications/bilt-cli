@@ -152,20 +152,44 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	// ── Step 2: Prerequisites ───────────────────────────────────────────
 	printStep(2, totalSteps, "Checking prerequisites", "active")
 	results := prereq.CheckAll(ctx, run)
-	hasFailure := false
+
+	var criticalFailures []prereq.CheckResult
 	for _, r := range results {
 		if r.Critical && !r.OK {
-			fmt.Printf("      %s %s\n", ui.CrossMark, r.Detail)
-			if r.FixHint != "" {
-				fmt.Println(ui.Hint(r.FixHint))
-			}
-			hasFailure = true
+			criticalFailures = append(criticalFailures, r)
 		}
 	}
-	if hasFailure {
-		printStep(2, totalSteps, "Prerequisites check failed", "fail")
-		return fmt.Errorf("missing prerequisites — fix the issues above and try again")
+
+	if len(criticalFailures) > 0 {
+		hasFailure := false
+		for _, r := range criticalFailures {
+			if r.FixFunc != nil {
+				_, fixErr := withSpinner(fmt.Sprintf("Installing %s...", r.Name), func() (string, error) {
+					return "", r.FixFunc(ctx, run)
+				})
+				if fixErr != nil {
+					fmt.Printf("      %s %s: %s\n", ui.CrossMark, r.Name, fixErr)
+					if r.FixHint != "" {
+						fmt.Println(ui.Hint(r.FixHint))
+					}
+					hasFailure = true
+				} else {
+					fmt.Printf("      %s %s installed\n", ui.CheckMark, r.Name)
+				}
+			} else {
+				fmt.Printf("      %s %s\n", ui.CrossMark, r.Detail)
+				if r.FixHint != "" {
+					fmt.Println(ui.Hint(r.FixHint))
+				}
+				hasFailure = true
+			}
+		}
+		if hasFailure {
+			printStep(2, totalSteps, "Prerequisites check failed", "fail")
+			return fmt.Errorf("missing prerequisites — fix the issues above and try again")
+		}
 	}
+
 	printStep(2, totalSteps, "All prerequisites met", "done")
 	fmt.Println()
 

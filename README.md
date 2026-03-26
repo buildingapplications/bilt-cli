@@ -12,13 +12,14 @@ Or download from [Releases](https://github.com/buildingapplications/bilt-cli/rel
 
 ## Usage
 
+1. Get a build code from [bilt.me](https://bilt.me)
+2. Run:
+
 ```sh
-bilt auth login        # authenticate with your Bilt account
-bilt build             # build and install on your device
-bilt doctor            # check prerequisites
-bilt devices           # list connected iOS devices
-bilt projects list     # list your projects
+bilt build <code>      # build and install on your device
 ```
+
+Prerequisites (Xcode, Node.js, CocoaPods, etc.) are checked automatically before the build starts.
 
 ## Requirements
 

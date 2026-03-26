@@ -14,9 +14,10 @@ import (
 type CheckResult struct {
 	Name     string // e.g. "Xcode"
 	OK       bool
-	Detail   string // e.g. "Xcode 16.2 installed"
-	FixHint  string // e.g. "Install Xcode from the App Store"
-	Critical bool   // If true, build cannot proceed without this
+	Detail   string                                            // e.g. "Xcode 16.2 installed"
+	FixHint  string                                            // e.g. "Install Xcode from the App Store"
+	Critical bool                                              // If true, build cannot proceed without this
+	FixFunc  func(ctx context.Context, r *runner.Runner) error // nil if can't auto-fix
 }
 
 // CheckAll runs all prerequisite checks. Requires macOS.
@@ -54,6 +55,7 @@ func checkXcode(ctx context.Context, r *runner.Runner) CheckResult {
 	if err != nil {
 		result.Detail = "Xcode command line tools not found"
 		result.FixHint = "Install Xcode from the App Store, then run: xcode-select --install"
+		result.FixFunc = fixXcode
 		return result
 	}
 
@@ -62,6 +64,7 @@ func checkXcode(ctx context.Context, r *runner.Runner) CheckResult {
 	if err != nil {
 		result.Detail = "xcodebuild not available"
 		result.FixHint = "Install Xcode from the App Store"
+		result.FixFunc = fixXcode
 		return result
 	}
 
@@ -79,6 +82,7 @@ func checkNode(ctx context.Context, r *runner.Runner) CheckResult {
 	if err != nil {
 		result.Detail = "Node.js not found"
 		result.FixHint = "Install Node.js 18+: https://nodejs.org/"
+		result.FixFunc = fixNode
 		return result
 	}
 
@@ -106,6 +110,7 @@ func checkCocoaPods(ctx context.Context, r *runner.Runner) CheckResult {
 	if err != nil {
 		result.Detail = "CocoaPods not found"
 		result.FixHint = "Install CocoaPods: sudo gem install cocoapods"
+		result.FixFunc = fixCocoaPods
 		return result
 	}
 
@@ -122,6 +127,7 @@ func checkGit(ctx context.Context, r *runner.Runner) CheckResult {
 	if err != nil {
 		result.Detail = "Git not found"
 		result.FixHint = "Install Git: https://git-scm.com/downloads"
+		result.FixFunc = fixGit
 		return result
 	}
 
