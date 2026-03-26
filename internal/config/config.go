@@ -28,11 +28,6 @@ type Auth struct {
 	APIKey string `yaml:"api_key,omitempty"` // bilt_live_... API key
 }
 
-// Defaults holds user defaults.
-type Defaults struct {
-	DeviceUDID string `yaml:"device_udid,omitempty"`
-}
-
 // ProjectConfig holds per-project cached settings.
 type ProjectConfig struct {
 	LastBuild time.Time `yaml:"last_build,omitempty"`
@@ -44,7 +39,6 @@ type ProjectConfig struct {
 // Config is the top-level config structure stored in ~/.bilt/config.yaml.
 type Config struct {
 	Auth     Auth                     `yaml:"auth,omitempty"`
-	Defaults Defaults                 `yaml:"defaults,omitempty"`
 	Projects map[string]ProjectConfig `yaml:"projects,omitempty"`
 
 	mu sync.Mutex `yaml:"-"`
@@ -92,12 +86,6 @@ func (c *Config) Save() error {
 // SetAPIKey stores the API key and saves.
 func (c *Config) SetAPIKey(apiKey string) error {
 	c.Auth.APIKey = apiKey
-	return c.Save()
-}
-
-// ClearAuth removes auth and saves.
-func (c *Config) ClearAuth() error {
-	c.Auth = Auth{}
 	return c.Save()
 }
 

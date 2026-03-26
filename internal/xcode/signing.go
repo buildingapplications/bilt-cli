@@ -1,49 +1,12 @@
 package xcode
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/bilt-dev/bilt-cli/internal/runner"
 )
-
-// SigningIdentity represents a code signing identity from the keychain.
-type SigningIdentity struct {
-	Hash   string
-	Name   string
-	Email  string
-	TeamID string
-	Type   string // "Apple Development" or "Apple Distribution"
-}
-
-// FindSigningIdentities returns all code signing identities on the system.
-func FindSigningIdentities(ctx context.Context, r *runner.Runner) ([]SigningIdentity, error) {
-	stdout, _, err := r.Run(ctx, "", "security", "find-identity", "-p", "codesigning", "-v")
-	if err != nil {
-		return nil, fmt.Errorf("finding signing identities: %w", err)
-	}
-	return ParseSigningIdentities(stdout), nil
-}
-
-// FindDevelopmentIdentities returns only Apple Development identities (for free account signing).
-func FindDevelopmentIdentities(ctx context.Context, r *runner.Runner) ([]SigningIdentity, error) {
-	all, err := FindSigningIdentities(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	var dev []SigningIdentity
-	for _, id := range all {
-		if id.Type == "Apple Development" {
-			dev = append(dev, id)
-		}
-	}
-	return dev, nil
-}
 
 // XcodeTeam represents a team registered in Xcode's account preferences.
 type XcodeTeam struct {
@@ -185,73 +148,4 @@ func PatchTeamID(projectDir, teamID string) error {
 		}
 	}
 	return nil
-}
-
-// ParseSigningIdentities parses the output of `security find-identity -p codesigning -v`.
-//
-// Example line:
-//
-//  1. ABC123DEF456... "Apple Development: karl@example.com (ABCDE12345)"
-func ParseSigningIdentities(output string) []SigningIdentity {
-	var identities []SigningIdentity
-
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-
-		// Skip summary line and empty lines
-		if !strings.Contains(line, `"`) {
-			continue
-		}
-
-		// Extract the quoted name
-		firstQuote := strings.Index(line, `"`)
-		lastQuote := strings.LastIndex(line, `"`)
-		if firstQuote == -1 || lastQuote <= firstQuote {
-			continue
-		}
-		fullName := line[firstQuote+1 : lastQuote]
-
-		// Determine type
-		var idType string
-		switch {
-		case strings.Contains(fullName, "Apple Development"):
-			idType = "Apple Development"
-		case strings.Contains(fullName, "Apple Distribution"):
-			idType = "Apple Distribution"
-		default:
-			continue // skip other identities
-		}
-
-		// Extract hash (first hex string on the line)
-		hash := ""
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			hash = parts[1]
-		}
-
-		// Extract email: between ": " and " ("
-		email := ""
-		colonIdx := strings.Index(fullName, ": ")
-		parenIdx := strings.LastIndex(fullName, " (")
-		if colonIdx >= 0 && parenIdx > colonIdx {
-			email = fullName[colonIdx+2 : parenIdx]
-		}
-
-		// Extract team ID: between last "(" and ")"
-		teamID := ""
-		lastOpen := strings.LastIndex(fullName, "(")
-		lastClose := strings.LastIndex(fullName, ")")
-		if lastOpen >= 0 && lastClose > lastOpen {
-			teamID = fullName[lastOpen+1 : lastClose]
-		}
-
-		identities = append(identities, SigningIdentity{
-			Hash:   hash,
-			Name:   fullName,
-			Email:  email,
-			TeamID: teamID,
-			Type:   idType,
-		})
-	}
-	return identities
 }

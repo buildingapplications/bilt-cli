@@ -9,7 +9,12 @@ import (
 	"time"
 )
 
-const defaultBaseURL = "http://localhost:3000"
+var defaultBaseURL = "http://localhost:3000"
+
+// SetDefaultBaseURL overrides the default API base URL (set via ldflags in release builds).
+func SetDefaultBaseURL(url string) {
+	defaultBaseURL = url
+}
 
 // Client is the Bilt API client. Uses API key authentication (bilt_live_... tokens).
 type Client struct {

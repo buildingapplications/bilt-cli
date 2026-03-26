@@ -189,13 +189,3 @@ func checkSigning(ctx context.Context, r *runner.Runner) CheckResult {
 	}
 	return result
 }
-
-// HasCriticalFailures returns true if any critical check failed.
-func HasCriticalFailures(results []CheckResult) bool {
-	for _, r := range results {
-		if r.Critical && !r.OK {
-			return true
-		}
-	}
-	return false
-}

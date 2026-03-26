@@ -46,7 +46,7 @@ get_latest_version() {
 install_via_brew() {
   if command -v brew >/dev/null 2>&1; then
     info "Installing via Homebrew..."
-    if brew install bilt-dev/tap/bilt 2>/dev/null; then
+    if brew install buildingapplications/tap/bilt 2>/dev/null; then
       return 0
     fi
     warn "Homebrew install failed, falling back to direct download..."

@@ -144,34 +144,6 @@ func Archive(ctx context.Context, r *runner.Runner, opts ArchiveOptions) error {
 	return r.RunWithLog(ctx, "", opts.LogFile, "xcodebuild", args...)
 }
 
-// Export runs xcodebuild -exportArchive to produce an .ipa.
-func Export(ctx context.Context, r *runner.Runner, opts ExportOptions) error {
-	args := []string{
-		"-exportArchive",
-		"-archivePath", opts.ArchivePath,
-		"-exportPath", opts.ExportPath,
-		"-exportOptionsPlist", opts.ExportOptionsPlist,
-		"-allowProvisioningUpdates",
-	}
-
-	return r.RunWithLog(ctx, "", opts.LogFile, "xcodebuild", args...)
-}
-
-// FindIPA finds the .ipa file in the export directory.
-func FindIPA(exportPath string) (string, error) {
-	entries, err := os.ReadDir(exportPath)
-	if err != nil {
-		return "", fmt.Errorf("reading export directory: %w", err)
-	}
-
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".ipa") {
-			return filepath.Join(exportPath, e.Name()), nil
-		}
-	}
-	return "", fmt.Errorf("no .ipa found in export directory")
-}
-
 // ArchiveOptions configures the xcodebuild archive command.
 type ArchiveOptions struct {
 	ProjectDir      string
@@ -181,14 +153,6 @@ type ArchiveOptions struct {
 	ArchivePath     string
 	DerivedDataPath string
 	LogFile         *os.File
-}
-
-// ExportOptions configures the xcodebuild export command.
-type ExportOptions struct {
-	ArchivePath        string
-	ExportPath         string
-	ExportOptionsPlist string
-	LogFile            *os.File
 }
 
 // FindAppInArchive finds the .app bundle inside a .xcarchive.

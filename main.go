@@ -11,10 +11,14 @@ var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
+	baseURL = ""
 )
 
 func main() {
 	cmd.SetVersion(version, commit, date)
+	if baseURL != "" {
+		cmd.SetBaseURL(baseURL)
+	}
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}

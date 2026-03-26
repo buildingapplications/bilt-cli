@@ -10,15 +10,14 @@ import (
 	"github.com/bilt-dev/bilt-cli/internal/runner"
 )
 
-// ProjectDir returns the local directory for a project.
-func ProjectDir(slug string) string {
+func projectDir(slug string) string {
 	return filepath.Join(config.BiltDir(), "projects", slug)
 }
 
 // CloneOrUpdate clones the repo if it doesn't exist, or pulls latest changes.
 // Returns the project directory path.
 func CloneOrUpdate(ctx context.Context, r *runner.Runner, slug, gitURL string) (string, error) {
-	dir := ProjectDir(slug)
+	dir := projectDir(slug)
 
 	gitDir := filepath.Join(dir, ".git")
 	if info, err := os.Stat(gitDir); err == nil && info.IsDir() {

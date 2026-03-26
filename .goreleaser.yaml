@@ -13,7 +13,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}} -X main.baseURL=https://bilt.me
 
 archives:
   - format: tar.gz
@@ -35,7 +35,7 @@ changelog:
 
 brews:
   - repository:
-      owner: bilt-dev
+      owner: buildingapplications
       name: homebrew-tap
     name: bilt
     homepage: "https://bilt.me"

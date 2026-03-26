@@ -115,12 +115,3 @@ func Select(title string, items []SelectItem) (int, error) {
 	final := result.(selectModel)
 	return final.selected, nil
 }
-
-// SelectStrings is a convenience wrapper for simple string lists.
-func SelectStrings(title string, labels []string) (int, error) {
-	items := make([]SelectItem, len(labels))
-	for i, l := range labels {
-		items[i] = SelectItem{Label: l}
-	}
-	return Select(title, items)
-}

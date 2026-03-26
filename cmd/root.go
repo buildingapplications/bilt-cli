@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bilt-dev/bilt-cli/internal/api"
 	"github.com/bilt-dev/bilt-cli/internal/config"
 	"github.com/bilt-dev/bilt-cli/internal/runner"
 	"github.com/spf13/cobra"
@@ -23,6 +24,11 @@ var (
 func SetVersion(version, commit, date string) {
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate(fmt.Sprintf("bilt %s (commit %s, built %s)\n", version, commit, date))
+}
+
+// SetBaseURL overrides the default API base URL (called from main with ldflags value).
+func SetBaseURL(url string) {
+	api.SetDefaultBaseURL(url)
 }
 
 var rootCmd = &cobra.Command{

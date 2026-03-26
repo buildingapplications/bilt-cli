@@ -18,9 +18,6 @@ func TestConfigRoundTrip(t *testing.T) {
 		Auth: Auth{
 			APIKey: "bilt_live_abc123def456",
 		},
-		Defaults: Defaults{
-			DeviceUDID: "00008120-XXXX",
-		},
 		Projects: map[string]ProjectConfig{
 			"my-app": {
 				TeamID:    "ABCDE12345",
@@ -44,7 +41,6 @@ func TestConfigRoundTrip(t *testing.T) {
 	assert.NoError(t, yaml.Unmarshal(data2, &cfg2))
 
 	assert.Equal(t, cfg.Auth.APIKey, cfg2.Auth.APIKey)
-	assert.Equal(t, cfg.Defaults.DeviceUDID, cfg2.Defaults.DeviceUDID)
 	assert.Equal(t, cfg.Projects["my-app"].TeamID, cfg2.Projects["my-app"].TeamID)
 	assert.Equal(t, cfg.Projects["my-app"].Scheme, cfg2.Projects["my-app"].Scheme)
 	assert.Equal(t, cfg.Projects["my-app"].Workspace, cfg2.Projects["my-app"].Workspace)

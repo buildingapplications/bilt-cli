@@ -15,7 +15,6 @@ var (
 	ColorError     = lipgloss.Color("#FF7675") // Red
 	ColorMuted     = lipgloss.Color("#636E72") // Gray
 	ColorHighlight = lipgloss.Color("#A29BFE") // Light purple
-	ColorWhite     = lipgloss.Color("#FAFAFA")
 )
 
 // Text styles
@@ -34,79 +33,16 @@ var (
 	CheckMark = Success.Render("✓")
 	CrossMark = ErrorText.Render("✗")
 	WarnMark  = Warning.Render("⚠")
-	Dot       = Muted.Render("·")
 	Arrow     = Primary.Render("→")
 )
 
-// Table styles
-var (
-	tableHeaderWord = lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary)
-)
-
-// TableHeaderRow formats a styled header with an underline.
-// Widths correspond to each column; the last column is not padded.
-func TableHeaderRow(widths []int, cols []string) string {
-	var header strings.Builder
-	header.WriteString("  ")
-	totalW := 0
-	for i, col := range cols {
-		styled := tableHeaderWord.Render(col)
-		if i < len(widths) && i < len(cols)-1 {
-			pad := widths[i] - len(col)
-			if pad < 0 {
-				pad = 0
-			}
-			header.WriteString(styled)
-			header.WriteString(strings.Repeat(" ", pad+2))
-			totalW += widths[i] + 2
-		} else {
-			header.WriteString(styled)
-			totalW += len(col)
-		}
-	}
-	header.WriteString("\n  ")
-	header.WriteString(Muted.Render(strings.Repeat("-", totalW)))
-	return header.String()
-}
-
 // Box styles
 var (
-	InfoBox = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(ColorPrimary).
-		Padding(0, 1)
-
-	ErrorBox = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ColorError).
-			Padding(0, 1)
-
 	SuccessBox = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ColorSuccess).
-			Padding(0, 1)
-
-	WarningBox = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ColorWarning).
-			Padding(0, 1)
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(ColorSuccess).
+		Padding(0, 1)
 )
-
-// Logo prints the Bilt banner
-func Logo() string {
-	return Primary.Bold(true).Render("bilt")
-}
-
-// Header renders a section header with a divider line.
-func Header(title string) string {
-	t := Bold.Render(title)
-	return fmt.Sprintf("\n  %s\n", t)
-}
-
-// StepProgress returns a formatted step indicator like "Step 3/7"
-func StepProgress(current, total int) string {
-	return Muted.Render(fmt.Sprintf("[%d/%d]", current, total))
-}
 
 // StepLine renders a step with status indicator.
 //
@@ -140,11 +76,6 @@ func StepLine(current, total int, label, status string) string {
 // Hint renders an indented hint line (muted, with arrow prefix).
 func Hint(text string) string {
 	return fmt.Sprintf("      %s %s", Arrow, Muted.Render(text))
-}
-
-// Divider renders a subtle horizontal divider.
-func Divider() string {
-	return fmt.Sprintf("  %s", Muted.Render(strings.Repeat("─", 50)))
 }
 
 // FormatError renders a prominent error with optional hints.
