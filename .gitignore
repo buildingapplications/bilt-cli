@@ -1,4 +1,6 @@
 # Binaries
+/bilt
+/bilt-linux
 bilt-cli
 *.exe
 *.dll
