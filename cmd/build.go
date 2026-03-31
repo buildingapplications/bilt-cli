@@ -139,7 +139,7 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	}
 	if cloneURL == "" {
 		fmt.Println(ui.FormatError("No git URL found",
-			"Make sure your project has generated code at https://bilt.me"))
+			"Make sure your project has generated code at https://app.bilt.me"))
 		return fmt.Errorf("project %q has no git URL", token.ProjectName)
 	}
 
