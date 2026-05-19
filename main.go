@@ -19,6 +19,9 @@ func main() {
 	if baseURL != "" {
 		cmd.SetBaseURL(baseURL)
 	}
+	if envBaseURL := os.Getenv("BILT_BASE_URL"); envBaseURL != "" {
+		cmd.SetBaseURL(envBaseURL)
+	}
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}

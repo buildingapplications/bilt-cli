@@ -35,7 +35,7 @@ var baseURL = "http://localhost:3000"
 
 // SetBaseURL overrides the API base URL (called from main via ldflags).
 func SetBaseURL(url string) {
-	baseURL = url
+	baseURL = strings.TrimRight(url, "/")
 }
 
 // buildPayload holds the build info fetched from the server.
@@ -493,6 +493,15 @@ func xcodeBuildError(logPath string, err error) error {
 		case strings.Contains(logContent, "provisioning profile"):
 			hints = append(hints,
 				"Make sure Developer Mode is enabled on your device.")
+		case strings.Contains(logContent, "unable to find a destination matching the provided destination specifier") &&
+			strings.Contains(logContent, "is not installed. please download and install the platform"):
+			hints = append(hints,
+				"Xcode is missing device support for your iPhone's iOS version.",
+				"Open Xcode → Settings → Components and install the matching iOS platform.")
+		case strings.Contains(logContent, "no space left on device"):
+			hints = append(hints,
+				"Your Mac ran out of disk space while Xcode was archiving the app.",
+				"Free more space, then retry with a fresh build code.")
 		}
 	}
 

@@ -9,6 +9,7 @@ set -e
 GITHUB_REPO="buildingapplications/bilt-cli"
 BINARY_NAME="bilt"
 INSTALL_DIR="/usr/local/bin"
+DEFAULT_BASE_URL="https://app.bilt.me"
 
 # Colors (if terminal supports it)
 RED='\033[0;31m'
@@ -20,6 +21,18 @@ NC='\033[0m' # No Color
 info()  { printf "${GREEN}==>${NC} ${BOLD}%s${NC}\n" "$1"; }
 warn()  { printf "${YELLOW}==> Warning:${NC} %s\n" "$1"; }
 error() { printf "${RED}==> Error:${NC} %s\n" "$1" >&2; }
+
+normalize_base_url() {
+  printf "%s" "$1" | sed 's#/*$##'
+}
+
+requested_base_url() {
+  if [ -n "${BILT_BASE_URL:-}" ]; then
+    normalize_base_url "$BILT_BASE_URL"
+    return 0
+  fi
+  printf "%s" "$DEFAULT_BASE_URL"
+}
 
 detect_os() {
   case "$(uname -s)" in
@@ -108,24 +121,103 @@ install_via_download() {
   info "Installed ${BINARY_NAME} v${version} to ${INSTALL_DIR}/${BINARY_NAME}"
 }
 
+build_for_base_url() {
+  local base_url="$1"
+  local cache_dir safe_name bilt_path tmp_dir source_dir
+
+  cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/bilt"
+  safe_name=$(printf "%s" "$base_url" | sed 's#[^A-Za-z0-9._-]#_#g')
+  bilt_path="${cache_dir}/${BINARY_NAME}-${safe_name}"
+  source_dir=$(find_local_source) || source_dir=""
+
+  if [ -x "$bilt_path" ] && { [ -z "$source_dir" ] || ! command -v go >/dev/null 2>&1; }; then
+    echo "$bilt_path"
+    return 0
+  fi
+
+  if ! command -v go >/dev/null 2>&1; then
+    error "This build code was created on ${base_url}, but the installed bilt CLI targets ${DEFAULT_BASE_URL}."
+    error "Install Go and run the command again, or open Build on Device from ${DEFAULT_BASE_URL}."
+    exit 1
+  fi
+
+  if [ -z "$source_dir" ] && ! command -v git >/dev/null 2>&1; then
+    error "Git is required to prepare bilt for ${base_url}."
+    exit 1
+  fi
+
+  mkdir -p "$cache_dir"
+
+  if [ -n "$source_dir" ]; then
+    info "Preparing local bilt from ${source_dir} for ${base_url}..." >&2
+    (
+      cd "$source_dir"
+      go build -ldflags "-s -w -X main.baseURL=${base_url}" -o "$bilt_path" . >&2
+    )
+  else
+    tmp_dir=$(mktemp -d)
+    trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
+    info "Preparing bilt for ${base_url}..." >&2
+    git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "$tmp_dir" >/dev/null
+    (
+      cd "$tmp_dir"
+      go build -ldflags "-s -w -X main.baseURL=${base_url}" -o "$bilt_path" . >&2
+    )
+    rm -rf "$tmp_dir"
+    trap - EXIT HUP INT TERM
+  fi
+
+  chmod +x "$bilt_path"
+
+  echo "$bilt_path"
+}
+
+find_local_source() {
+  local dir
+
+  if [ -n "${BILT_CLI_SOURCE:-}" ]; then
+    if [ -f "${BILT_CLI_SOURCE}/go.mod" ]; then
+      echo "$BILT_CLI_SOURCE"
+      return 0
+    fi
+    error "BILT_CLI_SOURCE is set but does not point to a Go module: ${BILT_CLI_SOURCE}"
+    exit 1
+  fi
+
+  for dir in "$PWD/../bilt-cli" "$PWD/bilt-cli" "$HOME/bilt/bilt-cli"; do
+    if [ -f "${dir}/go.mod" ]; then
+      echo "$dir"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 main() {
-  local os arch bilt_path
+  local os arch bilt_path base_url
 
   os=$(detect_os)
   arch=$(detect_arch)
+  base_url=$(requested_base_url)
 
-  bilt_path=$(find_bilt) || bilt_path=""
-
-  if [ -n "$bilt_path" ]; then
-    info "bilt found: $bilt_path"
+  if [ "$base_url" != "$DEFAULT_BASE_URL" ]; then
+    bilt_path=$(build_for_base_url "$base_url")
+    info "bilt ready for ${base_url}: $bilt_path"
   else
-    # Try brew first on macOS, fall back to direct download
-    if [ "$os" = "darwin" ]; then
-      install_via_brew || install_via_download "$os" "$arch"
-    else
-      install_via_download "$os" "$arch"
-    fi
     bilt_path=$(find_bilt) || bilt_path=""
+
+    if [ -n "$bilt_path" ]; then
+      info "bilt found: $bilt_path"
+    else
+      # Try brew first on macOS, fall back to direct download
+      if [ "$os" = "darwin" ]; then
+        install_via_brew || install_via_download "$os" "$arch"
+      else
+        install_via_download "$os" "$arch"
+      fi
+      bilt_path=$(find_bilt) || bilt_path=""
+    fi
   fi
 
   if [ -z "$bilt_path" ]; then
@@ -141,7 +233,11 @@ main() {
   fi
 
   printf "\n"
-  info "bilt is ready! Run 'bilt build <code>' to build your app."
+  if [ "$base_url" != "$DEFAULT_BASE_URL" ]; then
+    info "bilt is ready! Run '${bilt_path} build <code>' to build your app from ${base_url}."
+  else
+    info "bilt is ready! Run 'bilt build <code>' to build your app."
+  fi
 }
 
 main "$@"

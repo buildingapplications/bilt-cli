@@ -63,6 +63,18 @@ func (r *Runner) Run(ctx context.Context, dir string, name string, args ...strin
 // RunWithLog executes a command and streams all output to a log file.
 // Used for long-running commands like xcodebuild where we want full logs on disk.
 func (r *Runner) RunWithLog(ctx context.Context, dir string, logFile *os.File, name string, args ...string) error {
+	return r.RunWithLogEnv(ctx, dir, logFile, nil, name, args...)
+}
+
+// RunWithLogEnv executes a command with additional environment variables and streams all output to a log file.
+func (r *Runner) RunWithLogEnv(
+	ctx context.Context,
+	dir string,
+	logFile *os.File,
+	env []string,
+	name string,
+	args ...string,
+) error {
 	r.Logger.Debug("running command with log",
 		zap.String("cmd", name),
 		zap.Strings("args", args),
@@ -73,6 +85,9 @@ func (r *Runner) RunWithLog(ctx context.Context, dir string, logFile *os.File, n
 	cmd := exec.CommandContext(ctx, name, args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
 	}
 
 	if r.Verbose {
