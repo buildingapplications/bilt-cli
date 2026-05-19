@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bilt-dev/bilt-cli/internal/runner"
 )
@@ -52,5 +53,28 @@ func InstallPods(ctx context.Context, r *runner.Runner, projectDir string, logFi
 	if _, err := os.Stat(iosDir); os.IsNotExist(err) {
 		return fmt.Errorf("ios/ directory not found in project — run expo prebuild first")
 	}
-	return r.RunWithLog(ctx, iosDir, logFile, "pod", "install")
+	err := r.RunWithLog(ctx, iosDir, logFile, "pod", "install")
+	if err == nil {
+		return nil
+	}
+	if !shouldRetryPodInstallWithRepoUpdate(logFile.Name()) {
+		return err
+	}
+
+	_, _ = fmt.Fprintln(logFile, "\nRetrying pod install with --repo-update because CocoaPods specs appear to be stale.")
+	retryErr := r.RunWithLog(ctx, iosDir, logFile, "pod", "install", "--repo-update")
+	if retryErr != nil {
+		return retryErr
+	}
+	return nil
+}
+
+func shouldRetryPodInstallWithRepoUpdate(logPath string) bool {
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		return false
+	}
+	logContent := strings.ToLower(string(content))
+	return strings.Contains(logContent, "none of your spec sources contain a spec satisfying the dependency") ||
+		strings.Contains(logContent, "out-of-date source repos")
 }
