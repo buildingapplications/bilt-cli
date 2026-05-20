@@ -62,11 +62,7 @@ func InstallPods(ctx context.Context, r *runner.Runner, projectDir string, logFi
 	}
 
 	_, _ = fmt.Fprintln(logFile, "\nRetrying pod install with --repo-update because CocoaPods specs appear to be stale.")
-	retryErr := r.RunWithLog(ctx, iosDir, logFile, "pod", "install", "--repo-update")
-	if retryErr != nil {
-		return retryErr
-	}
-	return nil
+	return r.RunWithLog(ctx, iosDir, logFile, "pod", "install", "--repo-update")
 }
 
 func shouldRetryPodInstallWithRepoUpdate(logPath string) bool {
@@ -74,7 +70,13 @@ func shouldRetryPodInstallWithRepoUpdate(logPath string) bool {
 	if err != nil {
 		return false
 	}
-	logContent := strings.ToLower(string(content))
-	return strings.Contains(logContent, "none of your spec sources contain a spec satisfying the dependency") ||
-		strings.Contains(logContent, "out-of-date source repos")
+	return logIndicatesStalePodSpecs(string(content))
+}
+
+// logIndicatesStalePodSpecs reports whether a pod install log shows the
+// failure modes that a `--repo-update` retry can resolve.
+func logIndicatesStalePodSpecs(log string) bool {
+	lower := strings.ToLower(log)
+	return strings.Contains(lower, "none of your spec sources contain a spec satisfying the dependency") ||
+		strings.Contains(lower, "out-of-date source repos")
 }
