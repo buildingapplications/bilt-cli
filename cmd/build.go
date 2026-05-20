@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -125,7 +126,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	ctx := cmd.Context()
-	totalSteps := 9
+	totalSteps := 8
+	if !flagSkipInstall {
+		totalSteps += 2
+	}
 
 	fmt.Println()
 
@@ -208,7 +212,7 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	// Detect if this is an Expo project that needs prebuild
 	needsPrebuild := deps.IsExpoProject(projectDir) && deps.NeedsExpoPrebuild(projectDir)
 	if needsPrebuild {
-		totalSteps = 10
+		totalSteps++
 	}
 
 	// Create build log file
@@ -343,6 +347,22 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	fmt.Println()
 	step++
 
+	// ── Detect target device before archive ─────────────────────────────
+	targetUDID := flagDevice
+	if !flagSkipInstall {
+		printStep(step, totalSteps, "Detecting device", "active")
+		deviceUDID, deviceLabel, deviceErr := selectTargetDevice(ctx, targetUDID)
+		if deviceErr != nil {
+			printStep(step, totalSteps, "No device available", "fail")
+			fmt.Println(ui.Hint("Connect and unlock your iPhone, trust this Mac, and enable Developer Mode."))
+			return deviceErr
+		}
+		targetUDID = deviceUDID
+		printStep(step, totalSteps, fmt.Sprintf("Device: %s", deviceLabel), "done")
+		fmt.Println()
+		step++
+	}
+
 	// ── Build (archive) ─────────────────────────────────────────────────
 	if err := xcode.PatchTeamID(projectDir, teamID); err != nil {
 		logger.Warn("failed to patch team ID in pbxproj", zap.Error(err))
@@ -359,6 +379,7 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 			Workspace:       workspace,
 			Scheme:          scheme,
 			TeamID:          teamID,
+			DeviceUDID:      targetUDID,
 			ArchivePath:     archivePath,
 			DerivedDataPath: derivedDataPath,
 			LogFile:         logFile,
@@ -385,37 +406,6 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	}
 
 	printStep(step, totalSteps, "Installing on device", "active")
-	targetUDID := flagDevice
-
-	if targetUDID == "" {
-		devices, devErr := device.Detect(ctx, run)
-		if devErr != nil || len(devices) == 0 {
-			printStep(step, totalSteps, "No device connected — skipping install", "warn")
-			fmt.Println()
-			printSummary(token.ProjectName, token.BundleID, appPath, buildDuration)
-			return nil
-		}
-		if len(devices) == 1 {
-			targetUDID = devices[0].UDID
-			fmt.Printf("      Installing on %s...\n", ui.Bold.Render(devices[0].Name))
-		} else {
-			items := make([]ui.SelectItem, len(devices))
-			for i, d := range devices {
-				items[i] = ui.SelectItem{
-					Label: d.Name,
-					Desc:  fmt.Sprintf("%s · %s", d.Model, d.Connection),
-				}
-			}
-			choice, selErr := ui.Select("Select a device:", items)
-			if selErr != nil {
-				return fmt.Errorf("selection failed: %w", selErr)
-			}
-			if choice < 0 {
-				return fmt.Errorf("cancelled")
-			}
-			targetUDID = devices[choice].UDID
-		}
-	}
 
 	_, err = withSpinner("Installing on device...", func() (string, error) {
 		return "", device.Install(ctx, run, targetUDID, appPath)
@@ -442,6 +432,56 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	pruneOldLogs(20)
 
 	return nil
+}
+
+func selectTargetDevice(ctx context.Context, requestedUDID string) (string, string, error) {
+	if requestedUDID != "" {
+		return requestedUDID, requestedUDID, nil
+	}
+
+	devices, err := device.Detect(ctx, run)
+	if err != nil {
+		return "", "", fmt.Errorf("detecting iPhone: %w", err)
+	}
+	if len(devices) == 0 {
+		return "", "", fmt.Errorf("no iPhone connected")
+	}
+	if len(devices) == 1 {
+		d := devices[0]
+		return d.UDID, formatDeviceLabel(d), nil
+	}
+
+	items := make([]ui.SelectItem, len(devices))
+	for i, d := range devices {
+		items[i] = ui.SelectItem{
+			Label: d.Name,
+			Desc:  fmt.Sprintf("%s · %s", d.Model, d.Connection),
+		}
+	}
+	choice, err := ui.Select("Select a device:", items)
+	if err != nil {
+		return "", "", fmt.Errorf("selection failed: %w", err)
+	}
+	if choice < 0 {
+		return "", "", fmt.Errorf("cancelled")
+	}
+
+	d := devices[choice]
+	return d.UDID, formatDeviceLabel(d), nil
+}
+
+func formatDeviceLabel(d device.Device) string {
+	details := []string{}
+	if d.Model != "" {
+		details = append(details, d.Model)
+	}
+	if d.Connection != "" {
+		details = append(details, d.Connection)
+	}
+	if len(details) == 0 {
+		return d.Name
+	}
+	return fmt.Sprintf("%s %s", d.Name, ui.Muted.Render("("+strings.Join(details, " · ")+")"))
 }
 
 func printStep(current, total int, label, status string) {
@@ -486,10 +526,14 @@ func xcodeBuildError(logPath string, err error) error {
 		case strings.Contains(logContent, "no signing certificate"):
 			hints = append(hints,
 				"Sign into your Apple ID in Xcode: Settings → Accounts")
+		case strings.Contains(logContent, "your team has no devices from which to generate a provisioning profile"):
+			hints = append(hints,
+				"Xcode couldn't create a provisioning profile because this team has no registered devices.",
+				"Connect your iPhone, unlock it, trust this Mac, and try again.")
 		case strings.Contains(logContent, "no profiles for"):
 			hints = append(hints,
 				"Xcode couldn't provision the app.",
-				"Open the project in Xcode once to create a provisioning profile, then try again.")
+				"Connect your iPhone and try again so Xcode can register it for this team.")
 		case strings.Contains(logContent, "provisioning profile"):
 			hints = append(hints,
 				"Make sure Developer Mode is enabled on your device.")
