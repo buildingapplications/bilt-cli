@@ -127,19 +127,28 @@ func isLibraryScheme(lower string) bool {
 // Archive runs xcodebuild archive.
 func Archive(ctx context.Context, r *runner.Runner, opts ArchiveOptions) error {
 	wsPath := filepath.Join(opts.ProjectDir, "ios", opts.Workspace)
+	destination := "generic/platform=iOS"
+	if opts.DeviceUDID != "" {
+		destination = fmt.Sprintf("id=%s", opts.DeviceUDID)
+	}
 
 	args := []string{
 		"archive",
 		"-workspace", wsPath,
 		"-scheme", opts.Scheme,
 		"-configuration", "Release",
-		"-destination", "generic/platform=iOS",
+		"-destination", destination,
 		"-archivePath", opts.ArchivePath,
 		"-derivedDataPath", opts.DerivedDataPath,
 		"-allowProvisioningUpdates",
+	}
+	if opts.DeviceUDID != "" {
+		args = append(args, "-allowProvisioningDeviceRegistration")
+	}
+	args = append(args,
 		fmt.Sprintf("CODE_SIGN_IDENTITY=%s", "Apple Development"),
 		fmt.Sprintf("DEVELOPMENT_TEAM=%s", opts.TeamID),
-	}
+	)
 
 	return r.RunWithLog(ctx, "", opts.LogFile, "xcodebuild", args...)
 }
@@ -150,6 +159,7 @@ type ArchiveOptions struct {
 	Workspace       string
 	Scheme          string
 	TeamID          string
+	DeviceUDID      string
 	ArchivePath     string
 	DerivedDataPath string
 	LogFile         *os.File

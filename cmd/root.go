@@ -26,9 +26,10 @@ func SetVersion(version, commit, date string) {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "bilt",
-	Short: "Build and install your Bilt app on your iPhone",
-	Long:  "Bilt CLI — build your AI-generated React Native app and install it on your iPhone.",
+	Use:          "bilt",
+	Short:        "Build and install your Bilt app on your iPhone",
+	Long:         "Bilt CLI — build your Expo app and install it on your iPhone.",
+	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 
