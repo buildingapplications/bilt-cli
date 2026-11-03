@@ -21,15 +21,27 @@ type Runner struct {
 
 // Run executes a command and returns stdout, stderr, and any error.
 func (r *Runner) Run(ctx context.Context, dir string, name string, args ...string) (string, string, error) {
+	return r.RunWithEnv(ctx, dir, nil, name, args...)
+}
+
+// RunWithEnv is Run with extra environment variables. Their values are never logged, so
+// secrets belong here rather than in args.
+func (r *Runner) RunWithEnv(
+	ctx context.Context, dir string, env []string, name string, args ...string,
+) (string, string, error) {
 	r.Logger.Debug("running command",
 		zap.String("cmd", name),
 		zap.Strings("args", args),
 		zap.String("dir", dir),
+		zap.Int("extraEnv", len(env)),
 	)
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
 	}
 
 	var stdout, stderr bytes.Buffer
