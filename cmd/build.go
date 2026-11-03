@@ -200,7 +200,7 @@ func runLocalBuild(cmd *cobra.Command, token *buildPayload) error {
 	// ── Step 3: Clone / update ──────────────────────────────────────────
 	printStep(3, totalSteps, "Fetching project source", "active")
 	projectDir, err := withSpinner("Cloning repository...", func() (string, error) {
-		return gitpkg.CloneOrUpdate(ctx, run, projectKey, cloneURL)
+		return gitpkg.CloneOrUpdate(ctx, run, projectKey, cloneURL, token.GitURL)
 	})
 	if err != nil {
 		printStep(3, totalSteps, "Clone failed", "fail")
